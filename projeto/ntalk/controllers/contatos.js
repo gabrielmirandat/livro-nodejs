@@ -1,72 +1,79 @@
-module.exports = function(app) {
+const { Types: { ObjectId } } = require('mongoose');
 
-  var Usuario = app.models.usuario;
+module.exports = (app) => {
+  const Usuario = app.models.usuario;
 
-  var ContatoController = {
+  const ContatosController = {
+    index(req, res) {
+      console.log(req);
 
-    index: function(req, res) {
-      var _id = req.session.usuario._id;
-      Usuario.findById(_id, function(erro, usuario) {
-        var contatos = usuario.contatos;
-        var resultado = {contatos: contatos};
-        res.render('contatos/index', resultado);
-      });
+      const { _id } = req.session.usuario;
+      Usuario.findById(_id)
+        .then((usuario) => {
+          const { contatos } = usuario;
+          res.render('contatos/index', { contatos });
+        })
+        .catch(() => res.redirect('/'))
+      ;
     },
-
-    create: function(req, res) {
-      var _id = req.session.usuario._id;
-      Usuario.findById(_id, function(erro, usuario) {
-        var contato = req.body.contato;
-        usuario.contatos.push(contato);
-        usuario.save(function() {
-          res.redirect('/contatos');
-        });
-      });
+    create(req, res) {
+      const { contato } = req.body;
+      const { _id } = req.session.usuario;
+      const set = { $push: { contatos: contato } };
+      Usuario.findByIdAndUpdate(_id, set)
+        .then(() => res.redirect('/contatos'))
+        .catch(() => res.redirect('/'))
+      ;
     },
-
-    show: function(req, res) {
-      var _id = req.session.usuario._id;
-      Usuario.findById(_id, function(erro, usuario) {
-        var contatoID = req.params.id;
-        var contato = usuario.contatos.id(contatoID);
-        var resultado = {contato: contato};
-        res.render('contatos/show', resultado);
-      });
+    show(req, res) {
+      const { _id } = req.session.usuario;
+      const contatoId = req.params.id;
+      Usuario.findById(_id)
+        .then((usuario) => {
+          const { contatos } = usuario;
+          const contato = contatos.find((ct) => {
+            return ct._id.toString() === contatoId;
+          });
+          res.render('contatos/show', { contato });
+        })
+        .catch(() => res.redirect('/'))
+      ;
     },
-
-    edit: function(req, res) {
-      var _id = req.session.usuario._id;
-      Usuario.findById(_id, function(erro, usuario) {
-        var contatoID = req.params.id;
-        var contato = usuario.contatos.id(contatoID);
-        var resultado = {contato: contato};
-        res.render('contatos/edit', resultado);
-      });
+    edit(req, res) {
+      const { _id } = req.session.usuario;
+      const contatoId = req.params.id;
+      Usuario.findById(_id)
+        .then((usuario) => {
+          const { contatos } = usuario;
+          const contato = contatos.find((ct) => {
+            return ct._id.toString() === contatoId;
+          });
+          res.render('contatos/edit', { contato, usuario });
+        })
+        .catch(() => res.redirect('/'))
+      ;
     },
-
-    update: function(req, res) {
-      var _id = req.session.usuario._id;
-      Usuario.findById(_id, function(erro, usuario) {
-        var contatoID = req.params.id;
-        var contato = usuario.contatos.id(contatoID);
-        contato.nome = req.body.contato.nome;
-        contato.email = req.body.contato.email;
-        usuario.save(function() {
-          res.redirect('/contatos');
-        });
-      });
+    update(req, res) {
+      const contatoId = req.params.id;
+      const { contato } = req.body;
+      const { usuario } = req.session;
+      const where = { 'contatos._id': contatoId };
+      const set = { $set: { 'contatos.$': contato } };
+      Usuario.update(where, set)
+        .then(() => res.redirect('/contatos'))
+        .catch(() => res.redirect('/'))
+      ;
     },
-
-    destroy: function(req, res) {
-      var _id = req.session.usuario._id;
-      Usuario.findById(_id, function(erro, usuario) {
-        var contatoID = req.params.id;
-        usuario.contatos.id(contatoID).remove();
-        usuario.save(function() {
-          res.redirect('/contatos');
-        });
-      });
+    destroy(req, res) {
+      const contatoId = req.params.id;
+      const { _id } = req.session.usuario;
+      const where = { _id };
+      const set = { $pull: { contatos: { _id: ObjectId(contatoId) } } };
+      Usuario.update(where, set)
+        .then(() => res.redirect('/contatos'))
+        .catch(() => res.redirect('/'))
+      ;
     }
-  }
-  return ContatoController;
+  };
+  return ContatosController;
 };

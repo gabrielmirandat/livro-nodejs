@@ -5,6 +5,8 @@ module.exports = (app) => {
 
   const ContatosController = {
     index(req, res) {
+      console.log(req);
+
       const { _id } = req.session.usuario;
       Usuario.findById(_id)
         .then((usuario) => {

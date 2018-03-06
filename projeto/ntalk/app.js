@@ -1,73 +1,63 @@
-var express = require('express')
-  , cfg = require('./config.json')
-  , load = require('express-load')
-  , bodyParser = require('body-parser')
-  , cookieParser = require('cookie-parser')
-  , expressSession = require('express-session')
-  , methodOverride = require('method-override')
-  , error = require('./middlewares/error')
-  , compression = require('compression')
-  , csurf = require('csurf')
-  , redisAdapter = require('socket.io-redis')
-  , RedisStore = require('connect-redis')(expressSession)
-  , app = express()
-  , server = require('http').Server(app)
-  , io = require('socket.io')(server)
-  , cookie = cookieParser(cfg.SECRET)
-  , store = new RedisStore({prefix: cfg.KEY})
-;
+const express = require('express');
+const path = require('path');
+const http = require('http');
+const socketIO = require('socket.io');
+const consign = require('consign');
+const bodyParser = require('body-parser');
+const cookie = require('cookie');
+const expressSession = require('express-session');
+const methodOverride = require('method-override');
+const mongoose = require('mongoose');
+const bluebird = require('bluebird');
+const config = require('./config');
+const error = require('./middlewares/error');
 
-app.disable('x-powered-by');
-app.set('views', __dirname + '/views');
+mongoose.Promise = bluebird;
+global.db = mongoose.connect('mongodb://localhost:27017/ntalk', { useMongoClient: true });
+
+const app = express();
+const server = http.Server(app);
+const io = socketIO(server);
+const store = new expressSession.MemoryStore();
+
+app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
-app.use(compression());
-app.use(cookie);
 app.use(expressSession({
-  secret: cfg.SECRET, 
-  name: cfg.KEY, 
-  resave: false, 
-  saveUninitialized: false,
-  store: store
+  store,
+  resave: true,
+  saveUninitialized: true,
+  name: config.sessionKey,
+  secret: config.sessionSecret
 }));
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended: true}));
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(methodOverride('_method'));
-app.use(express.static(__dirname + '/public', cfg.CACHE));
-app.use(csurf());
-app.use(function(req, res, next) {
-  res.locals._csrf = req.csrfToken();
-  next();
-});
+app.use(express.static(path.join(__dirname, 'public')));
 
-io.adapter(redisAdapter(cfg.REDIS));
-io.use(function(socket, next) {
-  var data = socket.request;
-  cookie(data, {}, function(err) {
-    var sessionID = data.signedCookies[cfg.KEY];
-    store.get(sessionID, function(err, session) {
-      if (err || !session) {
-        return next(new Error('not authorized'));
-      } else {
-        socket.handshake.session = session;
-        return next();
-      }
-    });
+io.use((socket, next) => {
+  const cookieData = socket.request.headers.cookie;
+  const cookieObj = cookie.parse(cookieData);
+  const sessionHash = cookieObj[config.sessionKey] || '';
+  const sessionID = sessionHash.split('.')[0].slice(2);
+  store.all((err, sessions) => {
+    const currentSession = sessions[sessionID];
+    if (err || !currentSession) {
+      return next(new Error('Acesso negado!'));
+    }
+    socket.handshake.session = currentSession;
+    return next();
   });
 });
 
-load('models')
+consign({})
+  .include('models')
   .then('controllers')
   .then('routes')
-  .into(app)
+  .then('events')
+  .into(app, io)
 ;
-load('sockets')
-  .into(io);
 
 app.use(error.notFound);
 app.use(error.serverError);
 
-server.listen(3000, function(){
-  console.log("Ntalk no ar.");
-});
-
-module.exports = app;
+server.listen(3000, () => console.log('Ntalk no ar.'));
